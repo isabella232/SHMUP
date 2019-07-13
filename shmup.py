@@ -12,8 +12,8 @@ from os import path
 # ################################################# #
 # Constants
 # ################################################# #
-WIDTH = 600
-HEIGHT = 800
+WIDTH = 800
+HEIGHT = 1200
 FPS = 60
 volume = .5
 speed = 12
@@ -43,8 +43,9 @@ def drawText(surf, text, size, x, y):
     surf.blit(text_surface, text_rect)
 
 
-def mediaLoad(media):
+def mediaLoad(media, colorkey=BLACK):
     m = pg.image.load(path.join(img_folder, media)).convert()
+    m.set_colorkey(colorkey)
     return m
 
 
@@ -55,15 +56,24 @@ def spawnMobs():
 
 
 def drawShieldBar(surf, x, y, pct):
+    """surf, x, y, pct"""
     if pct < 0:
         pct = 0
     BAR_LENGTH = 200
-    BAR_HEIGHT = 20
+    BAR_HEIGHT = 10
     fill = pct / 100 * BAR_LENGTH
     outline_rect = pg.Rect(x, y, BAR_LENGTH, BAR_HEIGHT)
     fill_bar = pg.Rect(x, y, fill, BAR_HEIGHT)
     pg.draw.rect(surf, GREEN, fill_bar)
     pg.draw.rect(surf, WHITE, outline_rect, 2)
+
+
+def drawLives(surf, x, y, lives, img):
+    for L in range(lives):
+        img_rect = img.get_rect()
+        img_rect.x = x + (L * 30)
+        img_rect.y = y
+        surf.blit(img, img_rect)
 
 
 class Player(pg.sprite.Sprite):
@@ -75,13 +85,21 @@ class Player(pg.sprite.Sprite):
         self.mask = pg.mask.from_surface(self.image)
         self.rect = self.image.get_rect()
         self.rect.centerx = WIDTH / 2
-        self.rect.bottom = HEIGHT - 10
+        self.rect.bottom = HEIGHT - 50
         self.speedx = 0
         self.health = 100
         self.shoot_delay = 250
         self.last_shot = pg.time.get_ticks()
+        self.lives = 3
+        self.hidden = False
+        self.hide_timer = pg.time.get_ticks()
 
     def update(self):
+        # Lets check to see if time to unhide after losing life.
+        if self.hidden and pg.time.get_ticks() - self.hide_timer > 2000:
+            self.hidden = False
+            self.rect.centerx = WIDTH / 2
+            self.rect.bottom = HEIGHT - 10
         self.speedx = 0
         k = pg.key.get_pressed()
         if k[pg.K_a]:
@@ -104,6 +122,11 @@ class Player(pg.sprite.Sprite):
             self.laser = Lasers(self.rect.centerx, self.rect.top + 5)
             allSprites.add(self.laser)
             lasers.add(self.laser)
+
+    def hide(self):
+        self.hidden = True
+        self.hide_timer = pg.time.get_ticks()
+        self.rect.center = (WIDTH + 100, HEIGHT + 100)
 
 
 class Mob(pg.sprite.Sprite):
@@ -206,11 +229,14 @@ shoot_sound = pg.mixer.Sound(path.join(snd_folder, "Laser_Shoot27.wav"))
 shoot_sound.set_volume(volume * .3)
 bg = pg.transform.scale(mediaLoad("bg5.jpg"), (WIDTH, HEIGHT))
 bg_rect = bg.get_rect()
+player_mini_img = pg.transform.scale(mediaLoad("playerShip1_blue.png"), (25, 19))
+
 
 explos_anim = {}
 explos_anim['hu'] = []
 explos_anim['lg'] = []
 explos_anim['sm'] = []
+explos_anim['ex'] = []
 for i in range(9):
     filename = 'regularExplosion0{}.png'.format(i)
     img = mediaLoad(filename)
@@ -221,6 +247,14 @@ for i in range(9):
     explos_anim['lg'].append(img_lg)
     img_sm = pg.transform.scale(img, (32, 32))
     explos_anim['sm'].append(img_sm)
+
+    filename = 'sonicExplosion0{}.png'.format(i)
+    son = mediaLoad(filename)
+    son.set_colorkey(BLACK)
+    img_son = pg.transform.scale(son, (256, 256))
+    explos_anim['ex'].append(img_son)
+
+
 print(explos_anim)
 # explos_anim = ['regularExplosion00.png', 'regularExplosion01.png', 'regularExplosion02.png',
 #               'regularExplosion03.png', 'regularExplosion04.png', 'regularExplosion05.png',
@@ -308,7 +342,7 @@ while gameRunning:
     # MOB COLLISION ON PLAYER
     mobhits = pg.sprite.spritecollide(player, mobs, True, pg.sprite.collide_mask)
     for hit in mobhits:
-        player.health -= hit.width / 50
+        player.health -= hit.width / 92
         if hit.width < 30:
             expl = Explosion(hit.rect.center, 'sm')
             allSprites.add(expl)
@@ -322,8 +356,15 @@ while gameRunning:
             allSprites.add(expl)
             print("HUGE: " + str(hit.width))
         spawnMobs()
+        if player.health <= 0:
+            player_death_explo = Explosion(player.rect.center, 'ex')
+            allSprites.add(player_death_explo)
+            player.lives -= 1
+            print(player.lives)
+            player.hide()
+            player.health = 100
 
-    if player.health < 1:
+    if player.lives == 0 and not player_death_explo.alive():
         gameRunning = False
 
     # ################################################# #
@@ -333,9 +374,10 @@ while gameRunning:
     SCREEN.fill(BLACK)
     SCREEN.blit(bg, bg_rect)
     allSprites.draw(SCREEN)
-    drawText(SCREEN, str(score), 20, WIDTH / 2, 10)
-    SCREEN.blit(num_images[0], num_images[0].get_rect())
-    drawShieldBar(SCREEN, 5, 5, player.health)
+    #SCREEN.blit(num_images[0], num_images[0].get_rect())
+    drawText(SCREEN, str(score), 30, 150, HEIGHT - 48)
+    drawLives(SCREEN, 10, HEIGHT - 40, player.lives, player_mini_img)
+    drawShieldBar(SCREEN, 10, HEIGHT - 15, player.health)
 
     # ################################################# #
     # AFTER drawining everything, flip the display.
